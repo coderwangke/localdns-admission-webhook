@@ -1,0 +1,72 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-localdns-webhook-job
+  namespace: kube-system
+spec:
+  template:
+    metadata:
+      name: init-localdns-webhook-job
+    spec:
+      containers:
+        - name: init-localdns-webhook
+          image: ccr.ccs.tencentyun.com/hale/localdns-webhook-init:v1.0
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: kubeconfig
+              mountPath: /root/.kube/config
+      restartPolicy: Never
+      volumes:
+        - name: kubeconfig
+          hostPath:
+            path: /root/.kube/config
+            type: File
+
+---
+
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: localdns-mutate-webhook
+  namespace: kube-system
+  labels:
+    app: localdns-injector
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: localdns-injector
+    spec:
+      containers:
+        - name: webhook
+          image: ccr.ccs.tencentyun.com/hale/localdns-mutate-webhook:t1
+          imagePullPolicy: IfNotPresent
+          args:
+            - -tlsCertFile=/etc/webhook/certs/cert.pem
+            - -tlsKeyFile=/etc/webhook/certs/key.pem
+            - 2>&1
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: /etc/webhook/certs
+              readOnly: true
+      volumes:
+        - name: webhook-certs
+          secret:
+            secretName: localdns-webhook-certs
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: localdns-webhook-svc
+  namespace: kube-system
+  labels:
+    app: localdns-injector
+spec:
+  ports:
+    - port: 443
+      targetPort: 443
+  selector:
+    app: localdns-injector
